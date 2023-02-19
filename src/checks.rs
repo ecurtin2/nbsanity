@@ -1,6 +1,10 @@
 use crate::notebook::{Cell, Notebook};
+use anyhow::{anyhow, Error, Result};
 use enum_dispatch::enum_dispatch;
-use serde::{ser::Error, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
+use std::slice::Iter;
+extern crate strsim;
+use strsim::levenshtein;
 
 #[enum_dispatch]
 trait CheckTrait {
@@ -8,23 +12,35 @@ trait CheckTrait {
 }
 
 #[enum_dispatch(CheckTrait)]
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 #[serde()]
 pub enum Check {
     FileNotNamedUntitled,
     CellExecutionIsSequential,
     NoEmptyCells,
+    HasTitleCell,
 }
 
 impl Check {
-    pub fn from_str(s: &str) -> Self {
+    pub fn iterator() -> Iter<'static, Self> {
+        static CHECKS: [Check; 4] = [
+            Check::FileNotNamedUntitled(FileNotNamedUntitled {}),
+            Check::CellExecutionIsSequential(CellExecutionIsSequential {}),
+            Check::NoEmptyCells(NoEmptyCells {}),
+            Check::HasTitleCell(HasTitleCell {}),
+        ];
+        CHECKS.iter()
+    }
+
+    pub fn from_str(s: &str) -> Result<Self, Error> {
         match s {
-            "FileNotNamedUntitled" => Check::FileNotNamedUntitled(FileNotNamedUntitled {}),
-            "CellExecutionIsSequential" => {
-                Check::CellExecutionIsSequential(CellExecutionIsSequential {})
-            }
-            "NoEmptyCells" => Check::NoEmptyCells(NoEmptyCells {}),
-            _ => panic!("Unknown check: {}", s),
+            "FileNotNamedUntitled" => Ok(Check::FileNotNamedUntitled(FileNotNamedUntitled {})),
+            "CellExecutionIsSequential" => Ok(Check::CellExecutionIsSequential(
+                CellExecutionIsSequential {},
+            )),
+            "NoEmptyCells" => Ok(Check::NoEmptyCells(NoEmptyCells {})),
+            "HasTitleCell" => Ok(Check::HasTitleCell(HasTitleCell {})),
+            _ => Err(anyhow!("Unknown check: {}", s)),
         }
     }
 
@@ -33,8 +49,17 @@ impl Check {
             Check::FileNotNamedUntitled(_) => "FileNotNamedUntitled",
             Check::CellExecutionIsSequential(_) => "CellExecutionIsSequential",
             Check::NoEmptyCells(_) => "NoEmptyCells",
+            Check::HasTitleCell(_) => "HasTitleCell",
         }
     }
+}
+
+pub fn find_closest(s: String) -> Check {
+    let closest = Check::iterator()
+        .map(|c| (levenshtein(c.to_str(), &s), c))
+        .min_by(|l, r| l.0.cmp(&r.0))
+        .unwrap();
+    closest.1.clone()
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -42,17 +67,9 @@ pub struct FileNotNamedUntitled;
 
 impl CheckTrait for FileNotNamedUntitled {
     fn check(&self, notebook: &Notebook) -> AnalysisResult {
-        let mut result: AnalysisResult = AnalysisResult {
-            pass: true,
-            check: Check::FileNotNamedUntitled(self.clone()),
-            failures: vec![],
-        };
+        let mut result = AnalysisResult::new(Check::FileNotNamedUntitled(self.clone()));
         if notebook.filename_str().to_lowercase().contains("untitled") {
-            result.pass = false;
-            result.failures.push(ResultFailure {
-                cell_id: 0,
-                description: "Notebook filename contains 'Untitled'".to_string(),
-            })
+            result.add_failure(0, "Notebook filename contains 'Untitled'".to_string())
         }
         result
     }
@@ -63,29 +80,21 @@ pub struct CellExecutionIsSequential;
 impl CheckTrait for CellExecutionIsSequential {
     fn check(&self, notebook: &Notebook) -> AnalysisResult {
         let mut previous: i32 = 0;
-        let mut result: AnalysisResult = AnalysisResult {
-            pass: true,
-            check: Check::CellExecutionIsSequential(self.clone()),
-            failures: vec![],
-        };
+        let mut result = AnalysisResult::new(Check::CellExecutionIsSequential(self.clone()));
         for cell in notebook.code_cells().iter() {
             match cell.execution_count {
                 Some(count) => {
                     if count != previous + 1 {
-                        result.pass = false;
-                        result.failures.push(ResultFailure {
-                            cell_id: cell.idx.unwrap_or(std::usize::MAX),
-                            description: format!("Not executed in order, got {}", count),
-                        });
+                        result.add_failure(
+                            cell.idx.unwrap_or(std::usize::MAX),
+                            format!("Not executed in order, got {}", count),
+                        )
                     }
                 }
-                None => {
-                    result.pass = false;
-                    result.failures.push(ResultFailure {
-                        cell_id: cell.idx.unwrap_or(std::usize::MAX),
-                        description: format!("Cell was not run"),
-                    })
-                }
+                None => result.add_failure(
+                    cell.idx.unwrap_or(std::usize::MAX),
+                    format!("Cell was not run"),
+                ),
             }
             previous += 1;
         }
@@ -97,11 +106,7 @@ impl CheckTrait for CellExecutionIsSequential {
 pub struct NoEmptyCells;
 impl CheckTrait for NoEmptyCells {
     fn check(&self, notebook: &Notebook) -> AnalysisResult {
-        let mut result: AnalysisResult = AnalysisResult {
-            pass: true,
-            check: Check::NoEmptyCells(self.clone()),
-            failures: vec![],
-        };
+        let mut result = AnalysisResult::new(Check::NoEmptyCells(self.clone()));
         let empty_cell_idxs: Vec<usize> = notebook
             .cells
             .clone()
@@ -124,14 +129,34 @@ impl CheckTrait for NoEmptyCells {
             })
             .collect();
 
-        result.pass = empty_cell_idxs.is_empty();
         for i in empty_cell_idxs {
-            result.failures.push(ResultFailure {
-                cell_id: i,
-                description: "Cell is empty".to_string(),
-            })
+            result.add_failure(i, "Cell is empty".to_string())
         }
         return result;
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct HasTitleCell;
+impl CheckTrait for HasTitleCell {
+    fn check(&self, notebook: &Notebook) -> AnalysisResult {
+        let mut result = AnalysisResult::new(Check::HasTitleCell(self.clone()));
+        let mut pass = false;
+        notebook.cells.first().map(|cell| {
+            if let Cell::Markdown(c) = cell {
+                if c.source.len() > 0 {
+                    if c.source[0].starts_with("#") {
+                        pass = true;
+                    }
+                }
+            }
+        });
+
+        if !pass {
+            result.add_failure(0, "Notebook does not have a title cell".to_string())
+        }
+
+        result
     }
 }
 
@@ -143,31 +168,48 @@ struct ResultFailure {
 
 #[derive(Debug)]
 pub struct AnalysisResult {
-    pass: bool,
     check: Check,
     failures: Vec<ResultFailure>,
 }
 
+impl AnalysisResult {
+    fn fail(&self) -> bool {
+        !self.failures.is_empty()
+    }
+
+    fn pass(&self) -> bool {
+        self.failures.is_empty()
+    }
+
+    fn add_failure(&mut self, cell_id: usize, description: String) {
+        self.failures.push(ResultFailure {
+            cell_id: cell_id,
+            description: description,
+        })
+    }
+
+    fn new(check: Check) -> Self {
+        AnalysisResult {
+            check: check,
+            failures: vec![],
+        }
+    }
+}
+
 pub fn analyze(notebook: &Notebook, exclude: &Vec<Check>) -> Vec<AnalysisResult> {
-    let r = vec![
-        Check::CellExecutionIsSequential(CellExecutionIsSequential {}).check(notebook),
-        Check::FileNotNamedUntitled(FileNotNamedUntitled {}).check(notebook),
-        Check::NoEmptyCells(NoEmptyCells {}).check(notebook),
-    ];
-    r
-    // Remove analysisresult if it's in the exclude list
-    // r.into_iter()
-    //     .filter(|r| !exclude.contains(&r.check))
-    //     .collect()
+    Check::iterator()
+        .filter(|c| !exclude.contains(c))
+        .map(|c| c.check(notebook))
+        .collect()
 }
 
 pub fn any_failed(results: &Vec<AnalysisResult>) -> bool {
-    results.iter().any(|r| !r.pass)
+    results.iter().any(|r| !r.pass())
 }
 
 pub fn display_errors(results: &Vec<AnalysisResult>, notebook: &Notebook) {
     for r in results.iter() {
-        if !r.pass {
+        if !r.pass() {
             for failure in &r.failures {
                 println!(
                     "{} <Cell: {}> {} [{}]",
@@ -186,12 +228,21 @@ mod tests {
     use super::*;
     use crate::notebook::CodeCell;
 
+    // test check find closest
+    #[test]
+    fn test_find_closest() {
+        let found = find_closest("CellExecutionIsSequentialX".to_string());
+        assert_eq!(
+            found,
+            Check::CellExecutionIsSequential(CellExecutionIsSequential {})
+        );
+    }
+
     #[test]
     fn not_untitled_error_if_untitled() {
         let notebook = Notebook::new("Untitled.ipynb".into());
         let result = Check::FileNotNamedUntitled(FileNotNamedUntitled {}).check(&notebook);
-        assert_eq!(result.pass, false);
-        assert_eq!(result.failures.len(), 1);
+        assert!(result.fail());
         assert_eq!(
             result.failures[0].description,
             "Notebook filename contains 'Untitled'"
@@ -203,8 +254,7 @@ mod tests {
     fn not_untitled_pass_if_not_untitled() {
         let notebook = Notebook::new("something else".into());
         let result = Check::FileNotNamedUntitled(FileNotNamedUntitled {}).check(&notebook);
-        assert_eq!(result.pass, true);
-        assert_eq!(result.failures.len(), 0);
+        assert!(result.pass());
     }
 
     // test analyze
@@ -212,7 +262,7 @@ mod tests {
     fn analyze_returns_all_results() {
         let notebook = Notebook::new("Untitled.ipynb".into());
         let results = analyze(&notebook, &vec![]);
-        assert_eq!(results.len(), 3);
+        assert_eq!(results.len(), Check::iterator().len());
     }
 
     // test any failed
@@ -220,46 +270,47 @@ mod tests {
     fn any_failed_returns_true_if_any_failed() {
         let notebook = Notebook::new("Untitled.ipynb".into());
         let results = analyze(&notebook, &vec![]);
-        assert_eq!(any_failed(&results), true);
+        assert!(any_failed(&results));
     }
-
-    // test any failed on untitled is false if excluded
-    // #[test]
-    // fn any_failed_returns_false_if_untitled_is_excluded() {
-    //     let notebook = Notebook::new("Untitled.ipynb".into());
-    //     let results = analyze(&notebook, &vec![Check::FileNotNamedUntitled]);
-    //     assert_eq!(any_failed(&results), false);
-    // }
-
     // test check empty cells true if any cell is empty
     #[test]
-    fn check_empty_cells_returns_true_if_any_cell_is_empty() {
+    fn check_empty_cells_fail_if_any_cell_is_empty() {
         let mut notebook = Notebook::new("test.ipynb".into());
         notebook.cells.push(Cell::Code(CodeCell::default()));
-        let results = analyze(&notebook, &vec![]);
-        assert_eq!(any_failed(&results), true);
+        let got = Check::NoEmptyCells(NoEmptyCells {}).check(&notebook);
+        assert!(got.fail());
     }
 
     #[test]
     fn check_string_roundtrip() {
-        let check = Check::FileNotNamedUntitled(FileNotNamedUntitled);
-        assert_eq!(Check::from_str(check.to_str()), check);
+        for check in Check::iterator() {
+            assert_eq!(Check::from_str(check.to_str()).unwrap(), *check);
+        }
     }
 
     #[test]
     fn check_from_string() {
         let check = Check::from_str("FileNotNamedUntitled");
-        assert_eq!(check, Check::FileNotNamedUntitled(FileNotNamedUntitled));
+        assert_eq!(
+            check.unwrap(),
+            Check::FileNotNamedUntitled(FileNotNamedUntitled)
+        );
+    }
+
+    #[test]
+    fn check_from_string_bad_input() {
+        let check = Check::from_str("NotArealCheck");
+        assert!(format!("{}", check.unwrap_err()).contains("Unknown check"));
     }
 
     // // test check empty cells false if has cells that aren't empty
     #[test]
-    fn check_empty_cells_returns_false_if_all_cells_are_not_empty() {
+    fn check_empty_cells_pass_if_all_cells_are_not_empty() {
         let mut notebook = Notebook::new("test.ipynb".into());
         let mut cell = CodeCell::default();
         cell.source = vec!["print('hello')".into()];
         notebook.cells = vec![Cell::Code(cell)];
-        let results = analyze(&notebook, &vec![]);
-        assert_eq!(any_failed(&results), false);
+        let got = Check::NoEmptyCells(NoEmptyCells {}).check(&notebook);
+        assert!(got.pass());
     }
 }

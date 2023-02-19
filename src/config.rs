@@ -1,9 +1,6 @@
-use crate::checks::Check;
 use serde::{Deserialize, Serialize};
-use serde_json::Result;
 use std::fs;
 use std::path::Path;
-use toml::Value;
 
 #[derive(Deserialize, Debug, Serialize)]
 pub struct Config {
@@ -56,10 +53,15 @@ mod tests {
         let toml = r#"
         [tool.nbsanity]
         root = "tests"
-        disaple = ["FileNotNamedUntitled"]
+        disable = ["FileNotNamedUntitled"]
         "#;
         let config: PyProjectTomlConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.tool.nbsanity.root.unwrap(), "tests");
-        // assert_eq!(config.tool.nbsanity.disable.unwrap()[0], Check::FileNotNamedUntitled);
+
+        let disable = Check::from_str(config.tool.nbsanity.disable.unwrap()[0].as_str()).unwrap();
+        assert_eq!(
+            disable,
+            Check::FileNotNamedUntitled(FileNotNamedUntitled {})
+        );
     }
 }
