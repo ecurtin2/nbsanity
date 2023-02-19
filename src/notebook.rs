@@ -6,9 +6,9 @@ use std::path::{Path, PathBuf};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct CellOutput {
-    name: String,
-    output_type: String,
-    text: Vec<String>,
+    name: Option<String>,
+    output_type: Option<String>,
+    text: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
