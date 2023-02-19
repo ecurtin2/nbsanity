@@ -1,41 +1,65 @@
+use crate::checks::Check;
 use serde::{Deserialize, Serialize};
 use serde_json::Result;
 use std::fs;
-use toml::Value;
 use std::path::Path;
-use crate::checks::Check;
+use toml::Value;
 
-
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Serialize)]
 pub struct Config {
     pub root: Option<String>,
-    pub disable: Option<Vec<Check>>,
+    pub disable: Option<Vec<String>>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Serialize)]
 struct ToolConfig {
     nbsanity: Config,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Serialize)]
 struct PyProjectTomlConfig {
     tool: ToolConfig,
 }
 
 impl Config {
-    pub fn build () -> Config {
-        let config_toml = fs::read_to_string("./pyproject.toml").expect("Error reading config");
-        let pyproj_config: PyProjectTomlConfig = toml::from_str(&config_toml).unwrap();
-        let config = pyproj_config.tool.nbsanity;
-        return config
+    pub fn build() -> Config {
+        let config_toml = fs::read_to_string("./pyproject.toml");
+        let config = match config_toml {
+            Ok(toml) => {
+                let pyproj_config: PyProjectTomlConfig = toml::from_str(&toml).unwrap();
+                pyproj_config.tool.nbsanity
+            }
+            Err(_e) => Config {
+                root: None,
+                disable: Some(Vec::new()),
+            },
+        };
+        return config;
     }
 
     pub fn root_path(&self) -> &Path {
         match &self.root {
             Some(p) => Path::new(p),
-            None => Path::new(".")
-
+            None => Path::new("."),
         }
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::checks::{Check, FileNotNamedUntitled};
+
+    // test config from toml string
+    #[test]
+    fn test_config_from_toml() {
+        let toml = r#"
+        [tool.nbsanity]
+        root = "tests"
+        disaple = ["FileNotNamedUntitled"]
+        "#;
+        let config: PyProjectTomlConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.tool.nbsanity.root.unwrap(), "tests");
+        // assert_eq!(config.tool.nbsanity.disable.unwrap()[0], Check::FileNotNamedUntitled);
+    }
+}

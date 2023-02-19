@@ -4,20 +4,20 @@ use serde_json::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct CellOutput {
     name: String,
     output_type: String,
     text: Vec<String>,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct JupyterCellMetaData {
     source_hidden: Option<bool>,
     outputs_hidden: Option<bool>,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct CellMetaData {
     jupyter: Option<JupyterCellMetaData>,
     // TODO execution
@@ -27,7 +27,7 @@ pub struct CellMetaData {
     tags: Option<Vec<String>>,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct CodeCell {
     pub id: Option<String>,
     pub metadata: CellMetaData,
@@ -38,7 +38,26 @@ pub struct CodeCell {
     pub idx: Option<usize>,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+// default
+impl Default for CodeCell {
+    fn default() -> Self {
+        CodeCell {
+            id: None,
+            metadata: CellMetaData {
+                jupyter: None,
+                collapsed: None,
+                name: None,
+                tags: None,
+            },
+            execution_count: Some(1),
+            outputs: vec![],
+            source: vec![],
+            idx: Some(0),
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct MarkdownCell {
     pub id: Option<String>,
     pub metadata: CellMetaData,
@@ -46,7 +65,7 @@ pub struct MarkdownCell {
     pub idx: Option<usize>,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(tag = "cell_type", rename_all = "snake_case")]
 pub enum Cell {
     Code(CodeCell),
@@ -122,6 +141,20 @@ pub struct NotebookMeta {
     authors: Option<Vec<Author>>,
 }
 
+// create an empty notebook meta
+impl Default for NotebookMeta {
+    fn default() -> Self {
+        NotebookMeta {
+            kernelspec: None,
+            language_info: None,
+            orig_nbformat: None,
+            title: None,
+            vscode: None,
+            authors: None,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Notebook {
     pub filename: Option<PathBuf>,
@@ -132,6 +165,19 @@ pub struct Notebook {
 }
 
 impl Notebook {
+    //Build and empty notebook with this filename
+    pub fn new(filename: &str) -> Notebook {
+        let mut notebook = Notebook {
+            filename: Some(PathBuf::from(filename)),
+            cells: Vec::new(),
+            nbformat: 0,
+            nbformat_minor: 0,
+            metadata: NotebookMeta::default(),
+        };
+        notebook.add_cell_indices();
+        notebook
+    }
+
     pub fn rglob(root: &Path) -> Option<Vec<Notebook>> {
         if root.is_dir() {
             let root_str = root.to_str()?;
