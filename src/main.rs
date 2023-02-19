@@ -26,7 +26,7 @@ fn main() -> Result<(), Error> {
     let mut global_any_failed = false;
     let (disabled, errors): (Vec<_>, Vec<_>) = conf
         .disable
-        .unwrap_or(vec![])
+        .unwrap_or_default()
         .iter()
         .map(|s| Check::from_str(s))
         .partition(Result::is_ok);
@@ -47,11 +47,11 @@ fn main() -> Result<(), Error> {
 
     for notebook in notebooks.iter_mut() {
         notebook.add_cell_indices();
-        let analysis = analyze(&notebook, &disabled);
+        let analysis = analyze(notebook, &disabled);
         let failed = any_failed(&analysis);
         if failed {
             global_any_failed = true;
-            display_errors(&analysis, &notebook);
+            display_errors(&analysis, notebook);
         } else if !opts.quiet {
             println!("{} \u{2705}", notebook.filename_str());
         }

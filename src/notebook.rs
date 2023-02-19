@@ -1,6 +1,7 @@
 use glob::glob;
 use serde::{Deserialize, Serialize};
 use serde_json::Error;
+use std::default::Default;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -72,9 +73,9 @@ pub enum Cell {
     Markdown(MarkdownCell),
 }
 
-fn extract_code_cells(cells: &Vec<Cell>) -> Vec<&CodeCell> {
+fn extract_code_cells(cells: &[Cell]) -> Vec<&CodeCell> {
     cells
-        .into_iter()
+        .iter()
         .filter_map(|cell| match cell {
             Cell::Code(c) => Some(c),
             _ => None,
@@ -82,9 +83,9 @@ fn extract_code_cells(cells: &Vec<Cell>) -> Vec<&CodeCell> {
         .collect()
 }
 
-fn extract_markdown_cells(cells: &Vec<Cell>) -> Vec<&MarkdownCell> {
+fn extract_markdown_cells(cells: &[Cell]) -> Vec<&MarkdownCell> {
     cells
-        .into_iter()
+        .iter()
         .filter_map(|cell| match cell {
             Cell::Markdown(c) => Some(c),
             _ => None,
@@ -131,7 +132,7 @@ struct Author {
     name: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct NotebookMeta {
     kernelspec: Option<KernelSpec>,
     language_info: Option<LanguageInfo>,
@@ -139,20 +140,6 @@ pub struct NotebookMeta {
     title: Option<String>,
     vscode: Option<VsCode>,
     authors: Option<Vec<Author>>,
-}
-
-// create an empty notebook meta
-impl Default for NotebookMeta {
-    fn default() -> Self {
-        NotebookMeta {
-            kernelspec: None,
-            language_info: None,
-            orig_nbformat: None,
-            title: None,
-            vscode: None,
-            authors: None,
-        }
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -186,8 +173,8 @@ impl Notebook {
             let result: Vec<Notebook> = files
                 .map(|p| Notebook::from_file(p.unwrap()).unwrap())
                 .collect();
-            return Some(result);
-        } else if root.extension().unwrap_or("".as_ref()) == ".ipynb" {
+            Some(result)
+        } else if root.extension().unwrap_or_else(|| "".as_ref()) == ".ipynb" {
             return Some(vec![Notebook::from_file(root.to_path_buf()).unwrap()]);
         } else {
             return Some(vec![]);
@@ -198,7 +185,7 @@ impl Notebook {
         let contents = fs::read_to_string(path.clone()).expect("Error reading file");
         let mut notebook: Notebook = serde_json::from_str(&contents)?;
         notebook.filename = Some(path);
-        return Ok(notebook);
+        Ok(notebook)
     }
 
     pub fn filename_str(&self) -> &str {

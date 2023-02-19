@@ -79,9 +79,8 @@ impl CheckTrait for FileNotNamedUntitled {
 pub struct CellExecutionIsSequential;
 impl CheckTrait for CellExecutionIsSequential {
     fn check(&self, notebook: &Notebook) -> AnalysisResult {
-        let mut previous: i32 = 0;
         let mut result = AnalysisResult::new(Check::CellExecutionIsSequential(self.clone()));
-        for cell in notebook.code_cells().iter() {
+        for (previous, cell) in (0_i32..).zip(notebook.code_cells().iter()) {
             match cell.execution_count {
                 Some(count) => {
                     if count != previous + 1 {
@@ -93,12 +92,11 @@ impl CheckTrait for CellExecutionIsSequential {
                 }
                 None => result.add_failure(
                     cell.idx.unwrap_or(std::usize::MAX),
-                    format!("Cell was not run"),
+                    "Cell was not run".to_string(),
                 ),
             }
-            previous += 1;
         }
-        return result;
+        result
     }
 }
 
@@ -132,7 +130,7 @@ impl CheckTrait for NoEmptyCells {
         for i in empty_cell_idxs {
             result.add_failure(i, "Cell is empty".to_string())
         }
-        return result;
+        result
     }
 }
 
@@ -142,15 +140,11 @@ impl CheckTrait for HasTitleCell {
     fn check(&self, notebook: &Notebook) -> AnalysisResult {
         let mut result = AnalysisResult::new(Check::HasTitleCell(self.clone()));
         let mut pass = false;
-        notebook.cells.first().map(|cell| {
-            if let Cell::Markdown(c) = cell {
-                if c.source.len() > 0 {
-                    if c.source[0].starts_with("#") {
-                        pass = true;
-                    }
-                }
+        if let Some(Cell::Markdown(first)) = notebook.cells.first() {
+            if !first.source.is_empty() && first.source[0].starts_with("'#'") {
+                pass = true;
             }
-        });
+        };
 
         if !pass {
             result.add_failure(0, "Notebook does not have a title cell".to_string())
@@ -183,31 +177,31 @@ impl AnalysisResult {
 
     fn add_failure(&mut self, cell_id: usize, description: String) {
         self.failures.push(ResultFailure {
-            cell_id: cell_id,
-            description: description,
+            cell_id,
+            description,
         })
     }
 
     fn new(check: Check) -> Self {
         AnalysisResult {
-            check: check,
+            check,
             failures: vec![],
         }
     }
 }
 
-pub fn analyze(notebook: &Notebook, exclude: &Vec<Check>) -> Vec<AnalysisResult> {
+pub fn analyze(notebook: &Notebook, exclude: &[Check]) -> Vec<AnalysisResult> {
     Check::iterator()
         .filter(|c| !exclude.contains(c))
         .map(|c| c.check(notebook))
         .collect()
 }
 
-pub fn any_failed(results: &Vec<AnalysisResult>) -> bool {
+pub fn any_failed(results: &[AnalysisResult]) -> bool {
     results.iter().any(|r| !r.pass())
 }
 
-pub fn display_errors(results: &Vec<AnalysisResult>, notebook: &Notebook) {
+pub fn display_errors(results: &[AnalysisResult], notebook: &Notebook) {
     for r in results.iter() {
         if !r.pass() {
             for failure in &r.failures {

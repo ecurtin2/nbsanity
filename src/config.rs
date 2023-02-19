@@ -1,37 +1,32 @@
 use serde::{Deserialize, Serialize};
+use std::default::Default;
 use std::fs;
 use std::path::Path;
 
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Debug, Serialize, Default)]
 pub struct Config {
     pub root: Option<String>,
     pub disable: Option<Vec<String>>,
 }
 
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Debug, Serialize, Default)]
 struct ToolConfig {
     nbsanity: Config,
 }
 
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Debug, Serialize, Default)]
 struct PyProjectTomlConfig {
     tool: ToolConfig,
 }
 
 impl Config {
     pub fn build() -> Config {
-        let config_toml = fs::read_to_string("./pyproject.toml");
-        let config = match config_toml {
-            Ok(toml) => {
-                let pyproj_config: PyProjectTomlConfig = toml::from_str(&toml).unwrap();
-                pyproj_config.tool.nbsanity
-            }
-            Err(_e) => Config {
-                root: None,
-                disable: Some(Vec::new()),
-            },
-        };
-        return config;
+        fs::read_to_string("./pyproject.toml").map_or(Config::default(), |s| {
+            toml::from_str::<PyProjectTomlConfig>(&s)
+                .unwrap_or_default()
+                .tool
+                .nbsanity
+        })
     }
 
     pub fn root_path(&self) -> &Path {
