@@ -6,6 +6,7 @@ use checks::{analyze, any_failed, display_errors, find_closest, Check};
 use config::Config;
 use notebook::Notebook;
 use serde_json::Error;
+use std::str::FromStr;
 use structopt::StructOpt;
 
 #[derive(StructOpt, Debug)]
@@ -40,7 +41,7 @@ fn main() -> Result<(), Error> {
             // a bit hacky, but it works for now.
             let error_str = format!("{}", e);
             let closest = find_closest(error_str);
-            println!("{}, did you mean {} ?", e, closest.to_str());
+            println!("{}, did you mean {} ?", e, closest);
         }
         std::process::exit(1);
     }

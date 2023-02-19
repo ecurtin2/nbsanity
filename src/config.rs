@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::fs;
 use std::path::Path;
+use std::str::FromStr;
 
 #[derive(Deserialize, Debug, Serialize, Default)]
 pub struct Config {
