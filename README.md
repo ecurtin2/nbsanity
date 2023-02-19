@@ -14,7 +14,7 @@ Download from the [releases page](https://github.com/ecurtin2/nbsanity/releases)
 
 ```
 mkdir -p ~/bin
-wget https://github.com/ecurtin2/nbsanity/releases/download/0.1.3/nbsanity -o ~/bin/nbsanity
+wget https://github.com/ecurtin2/nbsanity/releases/download/0.1.4/nbsanity -o ~/bin/nbsanity
 chmod +x ~/bin/nbsanity
 ```
 
